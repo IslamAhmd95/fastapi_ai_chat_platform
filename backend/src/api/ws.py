@@ -1,5 +1,6 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi_limiter.depends import WebSocketRateLimiter
 
 
 html = """
@@ -50,8 +51,9 @@ class ConnectionManager:
         await self.send_personal_message("Welcome to the chat! We have {} users online.".format(len(self.active_connections)), websocket)
 
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    async def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)
@@ -85,12 +87,76 @@ async def get():
 @router.websocket("/chat/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: int):
     await manager.connect(websocket) # The moment we agree to connect
+    ratelimit = WebSocketRateLimiter(times=1, seconds=50)
+
     try:
         await manager.broadcast(f"Client #{client_id} joins the chat")
         while True:
             data = await websocket.receive_text()
+
+            try:
+                await ratelimit(websocket, context_key=f"ws:{client_id}")
+            except HTTPException:
+                await manager.send_personal_message("⚠️ Rate limit exceeded! Please slow down.", websocket)
+                continue
+
             await manager.send_personal_message(f"You wrote: {data}", websocket)
             await manager.broadcast(f"Client #{client_id} says: {data}")
+
     except WebSocketDisconnect:
-        await manager.broadcast(f"Client #{client_id} left the chat")
         await manager.disconnect(websocket)
+        await manager.broadcast(f"Client #{client_id} left the chat")
+
+
+
+
+
+
+
+
+
+"""
+```
+try:
+    await ratelimit(websocket, context_key=f"ws:{client_id}")
+except HTTPException:
+    await manager.send_personal_message("⚠️ Rate limit exceeded!", websocket)
+    continue
+```
+
+**What actually happens in Redis:**
+
+When `client_id = 2`:
+- **Key**: `"ws:2"` ✅ (you got this right!)
+- **Value**: Not just a simple counter, but a **list of timestamps** of recent requests
+
+**Behind the scenes:**
+1. **First request**: Redis stores `ws:2 = [timestamp1]` → ✅ Allowed
+2. **Second request within 50 seconds**: Redis checks `ws:2 = [timestamp1]`, counts 1 request in the last 50 seconds → ❌ **HTTPException raised** (limit exceeded!)
+3. **Request after 50 seconds**: Redis removes old timestamps, `ws:2 = []` or expired → ✅ Allowed again
+
+**The sliding window concept:**
+```
+Timeline:
+0s -----> 10s -----> 50s -----> 60s
+|         |          |          |
+Req1 ✅   Req2 ❌   Req3 ✅    Req4 ✅
+         (too soon!) (50s passed, OK!)
+
+"""
+
+""""
+Redis on terminal
+
+```bash
+redis-cli
+127.0.0.1:6379> KEYS *
+# You'll see keys like "ws:2" when someone is rate-limited
+
+127.0.0.1:6379> GET "ws:2"
+# You'll see the timestamp data
+
+127.0.0.1:6379> TTL "ws:2"
+# Shows how many seconds until the key expires
+```
+"""

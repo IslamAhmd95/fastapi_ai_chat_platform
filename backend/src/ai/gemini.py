@@ -5,7 +5,7 @@ from .base import AIPlatform
 class Gemini(AIPlatform):
     def __init__(self, api_key: str, system_prompt: str = None):
         self.system_prompt = system_prompt
-        self.model = "gemini-2.5-flash-preview-05-20"
+        self.model = "gemini-2.0-flash"
         self.client = genai.Client(api_key=api_key)
 
 

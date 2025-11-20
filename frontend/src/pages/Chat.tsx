@@ -27,6 +27,8 @@ const Chat = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const bcRef = useRef<BroadcastChannel | null>(null);
   const [waiting, setWaiting] = useState(false);
+  const lastPromptRef = useRef<string>("");
+
 
 
   const scrollToBottom = () => {
@@ -54,6 +56,7 @@ const Chat = () => {
     if (!model) return;
 
     setWaiting(false);
+    setInput(""); // CLEAR input when switching models
 
     async function fetchHistory() {
       try {
@@ -92,12 +95,21 @@ const Chat = () => {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+
       if (data.error) {
         toast.error(data.error);
-        setWaiting(false);  
+
+        // Remove user message
+        setMessages(prev => prev.slice(0, -1));
+
+        // Restore input EXACTLY as user wrote it
+        setInput(lastPromptRef.current);
+
+        setWaiting(false);
         return;
       }
 
+      // normal behavior
       const aiMessage: Message = {
         role: "assistant",
         content: data.response,
@@ -105,12 +117,10 @@ const Chat = () => {
       };
 
       setWaiting(false);
-
-      setMessages((prev) => [...prev, aiMessage]);
-
-      // Broadcast assistant message
+      setMessages(prev => [...prev, aiMessage]);
       bcRef.current?.postMessage(aiMessage);
     };
+
 
     ws.onclose = () => {
       console.log("WebSocket disconnected");
@@ -146,27 +156,37 @@ const Chat = () => {
     toast.success('Logged out successfully');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return toast.error("Please enter a message");
 
     const nowIso = new Date().toISOString();
-    const userMessage: Message = { role: "user", content: input, created_at: nowIso };
-    setMessages((prev) => [...prev, userMessage]);
 
-    // Broadcast user message to other tabs
+    lastPromptRef.current = input;  // SAVE THE PROMPT *BEFORE* CLEARING
+
+    const userMessage: Message = {
+      role: "user",
+      content: input,
+      created_at: nowIso
+    };
+
+    setMessages(prev => [...prev, userMessage]);
     bcRef.current?.postMessage(userMessage);
 
-    setInput("");
+    setInput("");     // clear only if NO error happens
     setWaiting(true);
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ model_name: model, prompt: input }));
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        model_name: model,
+        prompt: lastPromptRef.current
+      }));
     } else {
       toast.error("WebSocket not connected");
       setWaiting(false);
     }
   };
+
 
 
   return (

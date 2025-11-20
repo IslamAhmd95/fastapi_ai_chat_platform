@@ -2,15 +2,23 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI  
 from fastapi.middleware.cors import CORSMiddleware  
+from redis.asyncio import Redis
+from fastapi_limiter import FastAPILimiter
 
-from src.api.auth import router as auth_routers
-from src.api.chat import router as chat_routers
+from src.api import (
+    auth, chat, ws
+)
 
 
 @asynccontextmanager  # Special decorator to manage the lifecycle to create an asynchronous context manager
 async def lifespan(app: FastAPI):   # means the whole lifespan of my app from start to finish
-    print("DB ready.")   # happens at startup
+    print("Startup ready.")   # happens at startup
+    redis_connection = Redis.from_url("redis://localhost:6379", encoding="utf-8", decode_responses=True)
+    await FastAPILimiter.init(redis_connection)
+
     yield     # app is running here normally (requests)
+
+    await FastAPILimiter.close()
     print("Shutdown...")  # happens at shutdown
 
 
@@ -33,5 +41,6 @@ app.add_middleware(
     allow_headers=["*"],           # Authorization, Content-Type...
 )
 
-app.include_router(auth_routers)
-app.include_router(chat_routers)
+app.include_router(auth.router)
+app.include_router(chat.router)
+app.include_router(ws.router)
