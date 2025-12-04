@@ -24,4 +24,3 @@ def login(schema: LoginSchema, db: Session = Depends(get_db)):
     user, access_token = auth_repository.login(schema, db)
     return {"user": UserReadSchema.model_validate(user), "access_token": access_token, "token_type": "bearer"}
 
-
