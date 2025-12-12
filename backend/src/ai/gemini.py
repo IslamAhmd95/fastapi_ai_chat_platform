@@ -1,9 +1,8 @@
 from google import genai
 from .base import AIPlatform
 
-
 class Gemini(AIPlatform):
-    def __init__(self, api_key: str, system_prompt: str = None):
+    def __init__(self, api_key: str, system_prompt: str | None = None):
         self.system_prompt = system_prompt
         self.model = "gemini-2.0-flash"
         self.client = genai.Client(api_key=api_key)
@@ -17,4 +16,4 @@ class Gemini(AIPlatform):
             model=self.model,
             contents=prompt,
         )
-        return response.text
+        return str(response.text)

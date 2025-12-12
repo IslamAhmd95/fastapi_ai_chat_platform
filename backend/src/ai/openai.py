@@ -4,7 +4,7 @@ from .base import AIPlatform
 
 
 class OpenAI(AIPlatform):
-    def __init__(self, api_key: str, system_prompt: str = None):
+    def __init__(self, api_key: str, system_prompt: str | None = None):
         self.system_prompt = system_prompt
         self.model = "gpt-5-nano"
         self.client = open_ai(
@@ -20,5 +20,4 @@ class OpenAI(AIPlatform):
                 model=self.model,
                 input=prompt
             )
-
         return response.output_text

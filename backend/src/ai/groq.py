@@ -2,7 +2,7 @@ from groq import Groq
 from .base import AIPlatform
 
 class GroqAI(AIPlatform):
-    def __init__(self, api_key: str, system_prompt: str = None):
+    def __init__(self, api_key: str, system_prompt: str | None = None):
         self.system_prompt = system_prompt
         self.model = "llama-3.3-70b-versatile"
         self.client = Groq(api_key=api_key)
@@ -15,4 +15,4 @@ class GroqAI(AIPlatform):
             model=self.model,
             messages=[{"role": "user", "content": prompt}]
         )
-        return response.choices[0].message.content
+        return str(response.choices[0].message.content)
