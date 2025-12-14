@@ -43,7 +43,8 @@ const Chat = () => {
       try {
         const platformList = await chatAPI.getPlatforms();
         setModels(platformList);
-        if (platformList.length > 0) setModel(platformList[0]);
+        setModel(platformList[0]);
+        // if (platformList.length > 0) setModel(platformList[0]);
       } catch {
         toast.error("Failed to load AI models");
       }

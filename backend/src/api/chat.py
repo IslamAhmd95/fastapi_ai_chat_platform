@@ -1,6 +1,6 @@
 from fastapi import (
     APIRouter, Depends, WebSocket, WebSocketDisconnect, status, HTTPException
-                )
+)
 from sqlmodel import Session
 from fastapi_limiter.depends import WebSocketRateLimiter
 
@@ -21,6 +21,11 @@ router = APIRouter(
     prefix="/ai", tags=["Ai"]
 )
 
+# Create rate limiter ONCE at module level to be shared across all connections
+ratelimit = WebSocketRateLimiter(
+    times=settings.RATE_LIMIT_TIMES, 
+    seconds=settings.RATE_LIMIT_WINDOW
+)
 
 @router.get('/platforms', response_model=GetPlatforms)
 def get_platforms():
@@ -29,10 +34,7 @@ def get_platforms():
 
 @router.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
-
-    await websocket.accept()  # accept connection with the client
-    
-    ratelimit = WebSocketRateLimiter(times=settings.RATE_LIMIT_TIMES, seconds=settings.RATE_LIMIT_WINDOW)
+    await websocket.accept()
     
     token_data = await authenticate_websocket(websocket)
     if not token_data:
@@ -41,7 +43,7 @@ async def websocket_endpoint(websocket: WebSocket):
     with Session(engine) as db:
         user = get_user_from_token(db, token_data.email)
         if user is None:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)  # policy violation
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
     try:
@@ -53,7 +55,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             try:
-                await ratelimit(websocket, context_key = f"user{user.id}")
+                await ratelimit(websocket, context_key=f"user:{user.id}")
             except HTTPException:
                 error_payload = {
                     "error": f"You have exceeded the rate limit. Please try again after {settings.RATE_LIMIT_WINDOW} seconds.",

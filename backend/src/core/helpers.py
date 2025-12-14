@@ -17,8 +17,8 @@ from src.core.enums import AIModels
 SYSTEM_PROMPT = None
 
 PLATFORM_MAP = {
-    AIModels.GEMINI: Gemini,
     AIModels.GROQ: GroqAI,
+    AIModels.GEMINI: Gemini,
     # AIModels.OPENAI: OpenAI,
 }
 
