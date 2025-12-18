@@ -55,10 +55,11 @@ async def process_ai_request(websocket, data, user, db):
     from src.repositories import chat_repository
 
     try:
-        return chat_repository.generate_model_response(data, user, db)
+        chat_record, remaining_requests = chat_repository.generate_model_response(data, user, db)
+        return chat_record, remaining_requests
     except HTTPException as e:
         await websocket.send_json({"error": e.detail})
-        return None
+        return None, None
 
 
 def load_system_prompt():

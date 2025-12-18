@@ -13,7 +13,7 @@ from src.core.oauth2 import authenticate_websocket
 from src.core.config import settings
 from src.core.helpers import get_user_from_token, parse_ws_message, process_ai_request
 from src.schemas.chat_schema import (
-    ChatRequest, ChatResponse, GetPlatforms, ChatHistoryResponse
+    ChatRequest, ChatResponse, GetPlatforms, ChatHistoryResponse, UsageInfo
 )
 
 
@@ -45,6 +45,7 @@ async def websocket_endpoint(websocket: WebSocket):
         if user is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+        user_id = user.id
 
     try:
         while True:
@@ -55,7 +56,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             try:
-                await ratelimit(websocket, context_key=f"user:{user.id}")
+                await ratelimit(websocket, context_key=f"user:{user_id}")
             except HTTPException:
                 error_payload = {
                     "error": f"You have exceeded the rate limit. Please try again after {settings.RATE_LIMIT_WINDOW} seconds.",
@@ -63,17 +64,29 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json(error_payload)
                 continue
 
-            chat_record = await process_ai_request(websocket, data, user, db)
-            if not chat_record:
-                continue
+            # Create new session for each message to get fresh user state
+            with Session(engine) as db:
+                # Fetch user fresh from database for each request
+                current_user = get_user_from_token(db, token_data.email)
+                if current_user is None:
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    break
+                
+                chat_record, remaining_requests = await process_ai_request(websocket, data, current_user, db)
+                if not chat_record:
+                    continue
 
-            payload = {
-                "prompt": chat_record.prompt,
-                "response": chat_record.response,
-                "created_at": chat_record.created_at.isoformat(),
-                "model_name": chat_record.model_name.value
-            }
-            await websocket.send_json(payload)
+                # Refresh user to get updated ai_requests_count after increment
+                db.refresh(current_user)
+
+                payload = {
+                    "prompt": chat_record.prompt,
+                    "response": chat_record.response,
+                    "created_at": chat_record.created_at.isoformat(),
+                    "model_name": chat_record.model_name.value,
+                    "remaining_requests": remaining_requests if remaining_requests is not None else (max(0, settings.AI_USAGE_LIMIT - current_user.ai_requests_count) if not current_user.is_unlimited else -1)
+                }
+                await websocket.send_json(payload)
 
     except WebSocketDisconnect:
         print("Client disconnected")
@@ -89,11 +102,23 @@ async def websocket_endpoint(websocket: WebSocket):
 @router.get('/chat-history', response_model=ChatHistoryResponse)
 def get_chat_history(model_name: AIModels, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     chat_records = chat_repository.get_chat_history(model_name, current_user, db)
-    return ChatHistoryResponse(chat=chat_records)
+    
+    # Calculate remaining requests
+    if current_user.is_unlimited:
+        remaining_requests = -1
+    else:
+        remaining_requests = max(0, settings.AI_USAGE_LIMIT - current_user.ai_requests_count)
+    
+    usage_info = UsageInfo(
+        remaining_requests=remaining_requests,
+        limit=settings.AI_USAGE_LIMIT
+    )
+    
+    return ChatHistoryResponse(chat=chat_records, usage_info=usage_info)
 
 
 # old non-real-time chat code
 @router.post('/chat', response_model=ChatResponse)
 def chat(data: ChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    response_text = chat_repository.chat(data, current_user, db)
-    return ChatResponse(response=response_text)
+    response_text, remaining_requests = chat_repository.chat(data, current_user, db)
+    return ChatResponse(response=response_text, remaining_requests=remaining_requests)

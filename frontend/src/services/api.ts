@@ -56,6 +56,31 @@ export interface ChatRequest {
 }
 export interface ChatResponse {
   response: string;
+  remaining_requests: number;
+}
+
+export interface UsageInfo {
+  remaining_requests: number;
+  limit: number;
+}
+
+export interface ChatHistoryResponse {
+  chat: Array<{
+    prompt: string;
+    response: string;
+    model_name: string;
+    created_at: string;
+  }>;
+  usage_info: UsageInfo;
+}
+
+export interface WebSocketMessage {
+  prompt?: string;
+  response?: string;
+  created_at?: string;
+  model_name?: string;
+  remaining_requests?: number;
+  error?: string;
 }
 
 // --- Auth API ---
@@ -74,8 +99,8 @@ export const chatAPI = {
     api.get("/ai/platforms").then((res) => res.data.platforms),
   getChatHistory: (model_name: string) =>
     api
-      .get("/ai/chat-history", { params: { model_name } })
-      .then((res) => res.data.chat),
+      .get<ChatHistoryResponse>("/ai/chat-history", { params: { model_name } })
+      .then((res) => res.data),
   connectWS: (token: string) => {
     const wsUrl =
       API_BASE_URL.replace(/^http/, "ws") + `/ai/ws/chat?token=${token}`;

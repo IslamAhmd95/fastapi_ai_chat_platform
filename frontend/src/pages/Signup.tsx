@@ -67,11 +67,15 @@ const Signup = () => {
     setLoading(true);
     setRecaptchaError("");
     try {
-      await authAPI.signup({
+      const response = await authAPI.signup({
         ...formData,
         recaptcha_token: token,
       });
-      toast.success("Account created! Please login.");
+      toast.success(response.message);
+      // Show usage limit message if provided
+      // if (response.usage_limit_message) {
+      //   toast.info(response.usage_limit_message, { duration: 5000 });
+      // }
       resetRecaptcha();
       navigate("/login");
     } catch (error: any) {

@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { authAPI, chatAPI } from '@/services/api';
+import { authAPI, chatAPI, WebSocketMessage } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatMessage from '@/components/ChatMessage';
 import { Loader2, LogOut, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -28,6 +29,8 @@ const Chat = () => {
   const bcRef = useRef<BroadcastChannel | null>(null);
   const [waiting, setWaiting] = useState(false);
   const lastPromptRef = useRef<string>("");
+  const [remainingRequests, setRemainingRequests] = useState<number | null>(null);
+  const [usageLimit, setUsageLimit] = useState<number>(10);
 
 
 
@@ -61,15 +64,21 @@ const Chat = () => {
 
     async function fetchHistory() {
       try {
-        const history = await chatAPI.getChatHistory(model);
+        const historyData = await chatAPI.getChatHistory(model);
         const formatted: Message[] = [];
 
-        history.forEach((h: any) => {
+        historyData.chat.forEach((h: any) => {
           formatted.push({ role: 'user', content: h.prompt, created_at: h.created_at });
           formatted.push({ role: 'assistant', content: h.response, created_at: h.created_at });
         });
 
         setMessages(formatted);
+        
+        // Update remaining requests from usage_info
+        if (historyData.usage_info) {
+          setRemainingRequests(historyData.usage_info.remaining_requests);
+          setUsageLimit(historyData.usage_info.limit);
+        }
       } catch {
         toast.error("Failed to load chat history");
       }
@@ -95,7 +104,7 @@ const Chat = () => {
     ws.onopen = () => console.log("WebSocket connected");
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      const data: WebSocketMessage = JSON.parse(event.data);
 
       if (data.error) {
         toast.error(data.error);
@@ -110,11 +119,16 @@ const Chat = () => {
         return;
       }
 
+      // Update remaining requests if provided
+      if (data.remaining_requests !== undefined) {
+        setRemainingRequests(data.remaining_requests);
+      }
+
       // normal behavior
       const aiMessage: Message = {
         role: "assistant",
-        content: data.response,
-        created_at: data.created_at,
+        content: data.response || "",
+        created_at: data.created_at || new Date().toISOString(),
       };
 
       setWaiting(false);
@@ -160,6 +174,12 @@ const Chat = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return toast.error("Please enter a message");
+    
+    // Check if limit reached
+    if (remainingRequests !== null && remainingRequests === 0) {
+      toast.error(`Free trial limit reached (${usageLimit} messages)`);
+      return;
+    }
 
     const nowIso = new Date().toISOString();
 
@@ -205,6 +225,15 @@ const Chat = () => {
                 ))}
               </SelectContent>
             </Select>
+            {remainingRequests !== null && (
+              <Badge variant={remainingRequests === 0 ? "destructive" : remainingRequests <= 3 ? "secondary" : "default"}>
+                {remainingRequests === -1 
+                  ? "Unlimited" 
+                  : remainingRequests === 0 
+                    ? "Limit reached" 
+                    : `${remainingRequests} message${remainingRequests !== 1 ? 's' : ''} left`}
+              </Badge>
+            )}
           </div>
           <Button variant="ghost" size="sm" onClick={handleLogout}>
             <LogOut className="h-4 w-4 mr-2" /> Logout
@@ -236,6 +265,11 @@ const Chat = () => {
       {/* Input */}
       <div className="border-t border-border bg-card shadow-lg">
         <div className="max-w-4xl mx-auto px-4 py-4">
+          {remainingRequests === 0 && (
+            <div className="mb-3 p-3 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+              Free trial limit reached ({usageLimit} messages). You have used all your free AI messages.
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="flex gap-2 items-end">
             <textarea
               value={input}
@@ -246,11 +280,12 @@ const Chat = () => {
                   handleSubmit(e);
                 }
               }}
-              placeholder="Type your message..."
-              className="flex-1 min-h-[48px] max-h-[200px] p-3 rounded-md border bg-background text-foreground resize-none"
+              placeholder={remainingRequests === 0 ? "Limit reached - no more messages available" : "Type your message..."}
+              disabled={remainingRequests === 0 || waiting}
+              className="flex-1 min-h-[48px] max-h-[200px] p-3 rounded-md border bg-background text-foreground resize-none disabled:opacity-50 disabled:cursor-not-allowed"
             />
 
-            <Button type="submit" size="icon" disabled={waiting}>
+            <Button type="submit" size="icon" disabled={waiting || remainingRequests === 0}>
               {waiting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </form>

@@ -15,6 +15,7 @@ class Settings:
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
     RATE_LIMIT_TIMES = int(os.getenv("RATE_LIMIT_TIMES", 5))
     RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", 60))  # seconds
+    AI_USAGE_LIMIT = int(os.getenv("AI_USAGE_LIMIT", 10))
     RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
     RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
     TESTING = os.getenv("TESTING", "False").lower() == "true"

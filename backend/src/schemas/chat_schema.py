@@ -16,8 +16,14 @@ class WebSocketMessage(BaseModel):
     prompt: str = Field(max_length=5000)
 
 
+class UsageInfo(BaseModel):
+    remaining_requests: int
+    limit: int
+
+
 class ChatResponse(BaseModel):
     response: str
+    remaining_requests: int
 
 
 class GetPlatforms(BaseModel):
@@ -39,3 +45,4 @@ class Chat(BaseModel):
 
 class ChatHistoryResponse(BaseModel):
     chat: List[Chat]
+    usage_info: UsageInfo

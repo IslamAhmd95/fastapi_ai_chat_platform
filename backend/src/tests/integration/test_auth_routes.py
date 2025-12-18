@@ -17,7 +17,7 @@ def test_register_creates_user_successfully(client, user_data):
     response = client.post("/auth/register", json=user_data)
 
     assert response.status_code == 201
-    assert "User created successfully" in response.json()["message"]
+    assert "Account created successfully" in response.json()["message"]
     assert response.json()["user"]["email"] == user_data["email"]
     assert response.json()["user"]["username"] == user_data["username"]
     assert response.json()["user"]["name"] == user_data["name"]

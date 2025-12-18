@@ -17,5 +17,7 @@ class User(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)}
     )
+    ai_requests_count: int = Field(default=0)
+    is_unlimited: bool = Field(default=False)
 
     chat_history: list["ChatHistory"] = Relationship(back_populates="user")  # type: ignore
