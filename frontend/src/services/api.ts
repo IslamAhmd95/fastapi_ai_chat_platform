@@ -101,6 +101,8 @@ export const chatAPI = {
     api
       .get<ChatHistoryResponse>("/ai/chat-history", { params: { model_name } })
       .then((res) => res.data),
+  getProviderAvailability: () =>
+    api.get("/ai/provider-availability").then((res) => res.data.availability),
   connectWS: (token: string) => {
     const wsUrl =
       API_BASE_URL.replace(/^http/, "ws") + `/ai/ws/chat?token=${token}`;

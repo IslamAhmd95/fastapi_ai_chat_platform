@@ -7,7 +7,7 @@ from fastapi_limiter.depends import WebSocketRateLimiter
 from src.models.user import User
 from src.core.oauth2 import get_current_user
 from src.repositories import chat_repository
-from src.core.enums import AIModels
+from src.core.enums import AIModels, PROVIDER_AVAILABILITY
 from src.core.database import get_db, engine
 from src.core.oauth2 import authenticate_websocket
 from src.core.config import settings
@@ -23,19 +23,30 @@ router = APIRouter(
 
 # Create rate limiter ONCE at module level to be shared across all connections
 ratelimit = WebSocketRateLimiter(
-    times=settings.RATE_LIMIT_TIMES, 
+    times=settings.RATE_LIMIT_TIMES,
     seconds=settings.RATE_LIMIT_WINDOW
 )
+
 
 @router.get('/platforms', response_model=GetPlatforms)
 def get_platforms():
     return {"platforms": list(AIModels)}
 
 
+@router.get('/provider-availability')
+def get_provider_availability():
+    return {
+        "availability": {
+            model.value: PROVIDER_AVAILABILITY.get(model, False)
+            for model in AIModels
+        }
+    }
+
+
 @router.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    
+
     token_data = await authenticate_websocket(websocket)
     if not token_data:
         return
@@ -71,7 +82,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if current_user is None:
                     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                     break
-                
+
                 chat_record, remaining_requests = await process_ai_request(websocket, data, current_user, db)
                 if not chat_record:
                     continue
@@ -101,24 +112,27 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @router.get('/chat-history', response_model=ChatHistoryResponse)
 def get_chat_history(model_name: AIModels, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    chat_records = chat_repository.get_chat_history(model_name, current_user, db)
-    
+    chat_records = chat_repository.get_chat_history(
+        model_name, current_user, db)
+
     # Calculate remaining requests
     if current_user.is_unlimited:
         remaining_requests = -1
     else:
-        remaining_requests = max(0, settings.AI_USAGE_LIMIT - current_user.ai_requests_count)
-    
+        remaining_requests = max(
+            0, settings.AI_USAGE_LIMIT - current_user.ai_requests_count)
+
     usage_info = UsageInfo(
         remaining_requests=remaining_requests,
         limit=settings.AI_USAGE_LIMIT
     )
-    
+
     return ChatHistoryResponse(chat=chat_records, usage_info=usage_info)
 
 
 # old non-real-time chat code
 @router.post('/chat', response_model=ChatResponse)
 def chat(data: ChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    response_text, remaining_requests = chat_repository.chat(data, current_user, db)
+    response_text, remaining_requests = chat_repository.chat(
+        data, current_user, db)
     return ChatResponse(response=response_text, remaining_requests=remaining_requests)
