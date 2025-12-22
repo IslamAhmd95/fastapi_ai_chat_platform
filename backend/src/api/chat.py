@@ -8,7 +8,7 @@ from src.models.user import User
 from src.core.oauth2 import get_current_user
 from src.repositories import chat_repository
 from src.core.enums import AIModels, PROVIDER_AVAILABILITY
-from src.core.database import get_db, engine
+from src.core import database
 from src.core.oauth2 import authenticate_websocket
 from src.core.config import settings
 from src.core.helpers import get_user_from_token, parse_ws_message, process_ai_request
@@ -51,7 +51,7 @@ async def websocket_endpoint(websocket: WebSocket):
     if not token_data:
         return
 
-    with Session(engine) as db:
+    with Session(database.engine) as db:
         user = get_user_from_token(db, token_data.email)
         if user is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -76,7 +76,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             # Create new session for each message to get fresh user state
-            with Session(engine) as db:
+            with Session(database.engine) as db:
                 # Fetch user fresh from database for each request
                 current_user = get_user_from_token(db, token_data.email)
                 if current_user is None:
@@ -111,7 +111,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @router.get('/chat-history', response_model=ChatHistoryResponse)
-def get_chat_history(model_name: AIModels, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_chat_history(model_name: AIModels, current_user: User = Depends(get_current_user), db: Session = Depends(database.get_db)):
     chat_records = chat_repository.get_chat_history(
         model_name, current_user, db)
 
@@ -132,7 +132,7 @@ def get_chat_history(model_name: AIModels, current_user: User = Depends(get_curr
 
 # old non-real-time chat code
 @router.post('/chat', response_model=ChatResponse)
-def chat(data: ChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def chat(data: ChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(database.get_db)):
     response_text, remaining_requests = chat_repository.chat(
         data, current_user, db)
     return ChatResponse(response=response_text, remaining_requests=remaining_requests)

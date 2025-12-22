@@ -186,107 +186,103 @@ def test_get_chat_history_includes_usage_info(client, test_db, authenticated_use
 
 @pytest.mark.parametrize("mocked_model", [AIModels.GEMINI])
 def test_unavailable_model(client, authenticated_user, mocked_model):
-    from unittest.mock import patch
-
+    from unittest.mock import patch, AsyncMock
     user, token = authenticated_user
 
-    print("Token:", token)
-    print("User found:", user)
+    # Patch the ratelimit instance in the chat module
+    with patch("src.api.chat.ratelimit", new_callable=AsyncMock) as mock_limit:
+        
+        with patch("src.repositories.chat_repository.is_provider_available") as mock_avail:
+            mock_avail.return_value = False
 
-
-    with patch("src.repositories.chat_repository.is_provider_available") as mock_avail:
-        mock_avail.return_value = False
-
-        try:
             with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
                 websocket.send_json({"model_name": mocked_model.value, "prompt": "Hello"})
                 response = websocket.receive_json()
                 assert response["error"] == "This AI provider is currently unavailable due to free-tier limits."
                 mock_avail.assert_called_once_with(mocked_model)
-        except Exception as e:
-            print(f"❌ Error: {type(e).__name__}: {e}")
-            raise
 
 
 def test_chat_endpoint_enforces_usage_limit(client, test_db, authenticated_user, monkeypatch):
-    """Test that HTTP POST /ai/ws/chat endpoint enforces usage limit"""
-    from unittest.mock import Mock, patch
+    
+    from unittest.mock import Mock, patch, AsyncMock
 
     user, token = authenticated_user
 
-    mocked_limit = 7
-    monkeypatch.setattr(settings, "AI_USAGE_LIMIT", mocked_limit)
+    with patch("src.api.chat.ratelimit", new_callable=AsyncMock):
+        
+        mocked_limit = 7
+        monkeypatch.setattr(settings, "AI_USAGE_LIMIT", mocked_limit)
 
-    # Set user to mocked limit
-    user.ai_requests_count = mocked_limit
-    user.is_unlimited = False
-    test_db.add(user)
-    test_db.commit()
-    test_db.refresh(user)
+        user.ai_requests_count = mocked_limit
+        user.is_unlimited = False
+        test_db.add(user)
+        test_db.commit()
+        test_db.refresh(user)
 
-    with patch('src.repositories.chat_repository.get_ai_platform') as mock_platform:
-        mock_ai = Mock()
-        mock_ai.chat.return_value = "AI Response"
-        mock_platform.return_value = mock_ai
+        with patch('src.repositories.chat_repository.get_ai_platform') as mock_platform:
+            mock_ai = Mock()
+            mock_ai.chat.return_value = "AI Response"
+            mock_platform.return_value = mock_ai
 
-        # Connect via WebSocket with token
-        with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
-            # Send message
-            websocket.send_json({
-                "model_name": AIModels.GROQ.value,
-                "prompt": "Test prompt"
-            })
-            
-            # Should receive error about limit
-            response = websocket.receive_json()
-            
-            assert "error" in response
-            assert "usage limit reached" in response["error"].lower()
+            # Connect via WebSocket with token
+            with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
+                # Send message
+                websocket.send_json({
+                    "model_name": AIModels.GROQ.value,
+                    "prompt": "Test prompt"
+                })
+                
+                # Should receive error about limit
+                response = websocket.receive_json()
+                
+                assert "error" in response
+                assert "usage limit reached" in response["error"].lower()
 
 
 def test_chat_endpoint_returns_remaining_requests(client, test_db, authenticated_user, monkeypatch):
-    """Test that HTTP POST /ai/ws/chat endpoint returns remaining_requests"""
-    from unittest.mock import Mock, patch
+    from unittest.mock import Mock, patch, AsyncMock
 
     user, token = authenticated_user
 
-    # Mock limit so test does not depend on env
-    mocked_limit = 10
-    monkeypatch.setattr(settings, "AI_USAGE_LIMIT", mocked_limit)
+    with patch("src.api.chat.ratelimit", new_callable=AsyncMock):
 
-    # Set user to have 5 requests used (leaving mocked_limit - 5 remaining before call)
-    user.ai_requests_count = 5
-    user.is_unlimited = False
-    test_db.add(user)
-    test_db.commit()
-    test_db.refresh(user)
+        # Mock limit so test does not depend on env
+        mocked_limit = 10
+        monkeypatch.setattr(settings, "AI_USAGE_LIMIT", mocked_limit)
 
-    with patch('src.repositories.chat_repository.get_ai_platform') as mock_platform:
-        mock_ai = Mock()
-        mock_ai.chat.return_value = "AI Response"
-        mock_platform.return_value = mock_ai
+        # Set user to have 5 requests used (leaving mocked_limit - 5 remaining before call)
+        user.ai_requests_count = 5
+        user.is_unlimited = False
+        test_db.add(user)
+        test_db.commit()
+        test_db.refresh(user)
 
-        # Connect via WebSocket
-        with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
-            # Send message
-            websocket.send_json({
-                "model_name": AIModels.GROQ.value,
-                "prompt": "Test prompt"
-            })
-            
-            response = websocket.receive_json()
-            
-            assert "remaining_requests" in response
-            assert "response" in response
-            assert response["response"] == "AI Response"
-            
-            expected_remaining = mocked_limit - (5 + 1)
-            assert response["remaining_requests"] == expected_remaining
+        with patch('src.repositories.chat_repository.get_ai_platform') as mock_platform:
+            mock_ai = Mock()
+            mock_ai.chat.return_value = "AI Response"
+            mock_platform.return_value = mock_ai
+
+            # Connect via WebSocket
+            with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
+                # Send message
+                websocket.send_json({
+                    "model_name": AIModels.GROQ.value,
+                    "prompt": "Test prompt"
+                })
+                
+                response = websocket.receive_json()
+                
+                assert "remaining_requests" in response
+                assert "response" in response
+                assert response["response"] == "AI Response"
+                
+                expected_remaining = mocked_limit - (5 + 1)
+                assert response["remaining_requests"] == expected_remaining
 
 
 def test_unlimited_user_bypasses_limit(client, test_db, authenticated_user):
-    """Test that unlimited users can exceed the normal limit"""
-    from unittest.mock import Mock, patch
+    
+    from unittest.mock import Mock, patch, AsyncMock
 
     user, token = authenticated_user
 
@@ -297,29 +293,31 @@ def test_unlimited_user_bypasses_limit(client, test_db, authenticated_user):
     test_db.commit()
     test_db.refresh(user)
 
-    with patch('src.repositories.chat_repository.get_ai_platform') as mock_platform:
-        mock_ai = Mock()
-        mock_ai.chat.return_value = "AI Response"
-        mock_platform.return_value = mock_ai
+    with patch("src.api.chat.ratelimit", new_callable=AsyncMock):
 
-        # Connect via WebSocket
-        with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
-            # Send message
-            websocket.send_json({
-                "model_name": AIModels.GROQ.value,
-                "prompt": "Test prompt"
-            })
-            
-            response = websocket.receive_json()
-            
-            assert "remaining_requests" in response
-            assert response["remaining_requests"] == -1  # -1 means unlimited
-            assert response["response"] == "AI Response"
+        with patch('src.repositories.chat_repository.get_ai_platform') as mock_platform:
+            mock_ai = Mock()
+            mock_ai.chat.return_value = "AI Response"
+            mock_platform.return_value = mock_ai
+
+            # Connect via WebSocket
+            with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
+                # Send message
+                websocket.send_json({
+                    "model_name": AIModels.GROQ.value,
+                    "prompt": "Test prompt"
+                })
+                
+                response = websocket.receive_json()
+                
+                assert "remaining_requests" in response
+                assert response["remaining_requests"] == -1  # -1 means unlimited
+                assert response["response"] == "AI Response"
 
 
 def test_successful_chat_flow(client, test_db, authenticated_user):
     """Test complete successful chat interaction"""
-    from unittest.mock import Mock, patch
+    from unittest.mock import Mock, patch, AsyncMock
 
     user, token = authenticated_user
     
@@ -329,28 +327,30 @@ def test_successful_chat_flow(client, test_db, authenticated_user):
     test_db.add(user)
     test_db.commit()
     
-    with patch('src.repositories.chat_repository.get_ai_platform') as mock_platform:
-        mock_ai = Mock()
-        mock_ai.chat.return_value = "Hello! How can I help you?"
-        mock_platform.return_value = mock_ai
-        
-        with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
-            # Send message
-            websocket.send_json({
-                "model_name": AIModels.GROQ.value,
-                "prompt": "Hello AI"
-            })
+    with patch("src.api.chat.ratelimit", new_callable=AsyncMock):
+
+        with patch('src.repositories.chat_repository.get_ai_platform') as mock_platform:
+            mock_ai = Mock()
+            mock_ai.chat.return_value = "Hello! How can I help you?"
+            mock_platform.return_value = mock_ai
             
-            # Receive response
-            response = websocket.receive_json()
-            
-            # Verify response structure
-            assert "prompt" in response
-            assert "response" in response
-            assert "created_at" in response
-            assert "model_name" in response
-            assert "remaining_requests" in response
-            
-            assert response["prompt"] == "Hello AI"
-            assert response["response"] == "Hello! How can I help you?"
-            assert response["model_name"] == AIModels.GROQ.value
+            with client.websocket_connect(f"/ai/ws/chat?token={token}") as websocket:
+                # Send message
+                websocket.send_json({
+                    "model_name": AIModels.GROQ.value,
+                    "prompt": "Hello AI"
+                })
+                
+                # Receive response
+                response = websocket.receive_json()
+                
+                # Verify response structure
+                assert "prompt" in response
+                assert "response" in response
+                assert "created_at" in response
+                assert "model_name" in response
+                assert "remaining_requests" in response
+                
+                assert response["prompt"] == "Hello AI"
+                assert response["response"] == "Hello! How can I help you?"
+                assert response["model_name"] == AIModels.GROQ.value
