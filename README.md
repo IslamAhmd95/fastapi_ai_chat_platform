@@ -62,12 +62,19 @@ This project demonstrates advanced backend concepts such as authentication, real
 * Generated and customized using **Lovable**
 * Communicates with backend via REST APIs .
 
+### Containerization & DevOps
+
+* Full-stack Orchestration: Entire ecosystem managed via Docker Compose.
+* Isolated Environments: Consistent development across any machine.
+* Network Security: Containers communicate over a private Docker bridge network.
+* Multi-stage Builds: Optimized images for both Frontend (Vite) and Backend (FastAPI).
+
 ---
 
 ## 🏗️ Project Structure
 
 ```
-fastapi-ai/
+multiai-chat-platform/
 ├── backend/
 │   ├── alembic/
 │   ├── src/
@@ -79,12 +86,17 @@ fastapi-ai/
 │   │   ├── repositories/       # Data access layer
 │   │   ├── schemas/            # Pydantic schemas
 │   │   └── tests/              # Unit & integration tests
+│   ├── Dockerfile              # Backend Dockerfile
 │   ├── main.py
 │   ├── alembic.ini
 │   ├── .env
 │   └── .env.example
 ├── frontend/                   # React + Tailwind frontend
+│   └── Dockerfile              # Frontend Dockerfile
 ├── requirements.txt
+├── docker-compose.yml          # Docker Compose config
+├── .env                        # Project Root environment variables
+├── .env.example                # Example for Root env variables
 ├── .gitignore
 └── README.md
 ```
@@ -116,44 +128,35 @@ fastapi-ai/
 * React
 * Tailwind CSS
 
+### Containerization & DevOps
+
+* Docker
+
 ---
 
 ## 🚀 Setup & Run
 
-### Backend
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn main:app --reload
+# From the root directory, run:
+docker-compose up --build
+
+# This will start both the backend and frontend services.
+# Backend will automatically run migrations on start.
+# Access backend at http://localhost:8000/docs
+# Access frontend at http://localhost:5173
+# Database (External): localhost:5433 (mapped from container 5432)
+
+
+# Run the migrations inside the running backend container:
+docker compose exec backend alembic upgrade head
+
+# Run tests
+docker compose exec backend pytest
+
+# To stop the services:
+docker-compose down
 ```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
-## 🧪 Run Tests
-
-```bash
-pytest
-```
-
----
-
-## 📌 Notes
-
-* Redis must be running for rate limiting
-* OpenAI integration is implemented but disabled by default
-* Environment variables are documented in `.env.example`
 
 ---
 
