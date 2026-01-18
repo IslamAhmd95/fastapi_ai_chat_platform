@@ -12,7 +12,7 @@ class Settings:
     DATABASE_URL = os.getenv('DATABASE_URL')
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
-    _default_cors_origins = '["http://localhost:8080", "http://127.0.0.1:8080"]'
+    _default_cors_origins = '["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8080", "http://127.0.0.1:8080"]'
     try:
         CORS_ORIGINS = json.loads(
             os.getenv("CORS_ORIGINS", _default_cors_origins))

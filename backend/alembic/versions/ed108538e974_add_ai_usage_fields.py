@@ -30,14 +30,14 @@ def upgrade() -> None:
     # Backfill ai_requests_count based on existing chat_history records
     # Use connection to execute raw SQL for compatibility
     connection = op.get_bind()
-    connection.execute(text("""
-        UPDATE "user" 
-        SET ai_requests_count = (
-            SELECT COUNT(*)
-            FROM chat_history 
-            WHERE chat_history.user_id = "user".id
-        )
-    """))
+    # connection.execute(text("""
+    #     UPDATE "user" 
+    #     SET ai_requests_count = (
+    #         SELECT COUNT(*)
+    #         FROM chat_history 
+    #         WHERE chat_history.user_id = "user".id
+    #     )
+    # """))
     connection.commit()
 
 
